@@ -1,12 +1,10 @@
 package stormTP.operator;
 
-
 import java.io.StringReader;
-import java.util.Map;
-import java.util.logging.Logger;
-
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.Map;
+import java.util.logging.Logger;
 
 import javax.json.Json;
 import javax.json.JsonObject;
@@ -23,93 +21,74 @@ import org.apache.storm.tuple.Values;
 
 public class ConsumeTimeBolt implements IRichBolt {
 
-		private static final long serialVersionUID = 4262369370788456843L;
-		private OutputCollector collector;
-		private static final Logger logger = Logger.getLogger("ConsumeTimeBolt");
-		
-			
-		/* (non-Javadoc)
-		 * @see org.apache.storm.topology.IRichBolt#execute(org.apache.storm.tuple.Tuple)
-		 */
-		public void execute(Tuple t) {
-			
-			 logger.info("[ConsumeTime] EXEC");
-					
-			/* récupération du message */
-			String n = t.getValueByField("json").toString();
+    private static final long serialVersionUID = 1L;
+    private OutputCollector collector;
+    // private static final Logger logger = Logger.getLogger("ConsumeTimeBolt");
 
-			/* Exraction des valeurs pour les encrypter */
-			JsonReader jr = Json.createReader( new StringReader(n) );
-			JsonObject obj = jr.readObject();
+    @Override
+    public void prepare(Map arg0, TopologyContext context, OutputCollector collector) {
+        this.collector = collector;
+    }
 
-			String value = null;
-			String couple = null;
-			int cpt = 0;
-			String indice = null;
+    @Override
+    public void execute(Tuple t) {
+        try {
+            String n = t.getValueByField("json").toString();
 
-			JsonObjectBuilder r = null;
-			r = Json.createObjectBuilder();
+            JsonReader jr = Json.createReader(new StringReader(n));
+            JsonObject obj = jr.readObject();
 
-			for (String key : obj.keySet()) {
-				value = obj.get(key).toString();
-				couple = key + ":" + encrypter( value) ;
-				indice = "" + cpt++;
-				r.add( indice, encrypter(couple) );
-			}
+            int cpt = 0;
+            String indice = null;
 
-			JsonObject row = r.build();
+            JsonObjectBuilder r = Json.createObjectBuilder();
 
-			logger.info("[ConsumeTime] " + row.toString());
-			collector.emit(t, new Values(row.toString()));
-			collector.ack(t);
-		}
+            for (String key : obj.keySet()) {
+                String value = obj.get(key).toString();
+                
+                // --- SABOTAGE : On répète le cryptage pour charger le CPU ---
+                // On crypte 5000 fois chaque valeur pour simuler un calcul lourd
+                String encryptedVal = value;
+                for(int i = 0; i < 1000000; i++) {
+                    encryptedVal = encrypter(encryptedVal);
+                }
+                
+                indice = "" + cpt++;
+                r.add(indice, encryptedVal);
+            }
 
+            JsonObject row = r.build();
+            collector.emit(t, new Values(row.toString()));
+            collector.ack(t);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            collector.fail(t);
+        }
+    }
 
-private String encrypter( String val ){
-	String res = "";
+    private String encrypter(String val) {
+        String res = "";
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(val.getBytes());
+            res = Base64.getEncoder().encodeToString(hash);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return res;
+    }
 
-	try{
-		MessageDigest digest = MessageDigest.getInstance("SHA-256");
-		byte[] hash = digest.digest(val.getBytes());
-		res =  Base64.getEncoder().encodeToString(hash);
-	}catch( Exception e ){
-		 e.printStackTrace();
-	}
-	return res;
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer arg0) {
+        arg0.declare(new Fields("json"));
+    }
+
+    @Override
+    public Map<String, Object> getComponentConfiguration() {
+        return null;
+    }
+
+    @Override
+    public void cleanup() {}
 }
-
-
-		/* (non-Javadoc)
-		 * @see org.apache.storm.topology.IComponent#declareOutputFields(org.apache.storm.topology.OutputFieldsDeclarer)
-		 */
-		public void declareOutputFields(OutputFieldsDeclarer arg0) {
-			arg0.declare( new Fields("json"));
-			
-		}
-			
-
-		/* (non-Javadoc)
-		 * @see org.apache.storm.topology.IComponent#getComponentConfiguration()
-		 */
-		public Map<String, Object> getComponentConfiguration() {
-			return null;
-		}
-
-		/* (non-Javadoc)
-		 * @see org.apache.storm.topology.IBasicBolt#cleanup()
-		 */
-		public void cleanup() {
-			
-		}
-		
-		
-		
-		/* (non-Javadoc)
-		 * @see org.apache.storm.topology.IRichBolt#prepare(java.util.Map, org.apache.storm.task.TopologyContext, org.apache.storm.task.OutputCollector)
-		 */
-		@SuppressWarnings("rawtypes")
-		public void prepare(Map arg0, TopologyContext context, OutputCollector collector) {
-			this.collector = collector;
-			
-		}
-	}
